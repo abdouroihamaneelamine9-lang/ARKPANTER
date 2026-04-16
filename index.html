@@ -13,286 +13,244 @@ if ("serviceWorker" in navigator) {
 <title>Routine quotidienne</title>
 
 <style>
-    body {
-        font-family: Arial, sans-serif;
-        margin: 0;
-        background: #f4f4f4;
-    }
-
-    .container {
-        max-width: 900px;
-        margin: auto;
-        padding: 20px;
-    }
-
-    .score {
-        font-size: 18px;
-        font-weight: bold;
-        margin-bottom: 10px;
-        padding: 10px;
-        background: #fff;
-        border-radius: 8px;
-        line-height: 1.6;
-    }
-
-    .fort { color: green; }
-    .faible { color: red; }
-
-    .top-bar {
-        display: flex;
-        gap: 10px;
-        margin-bottom: 10px;
-    }
-
-    .btn {
-        padding: 8px 12px;
-        border: none;
-        border-radius: 6px;
-        cursor: pointer;
-        font-weight: bold;
-    }
-
-    .reset {
-        background:#111;
-        color:#fff;
-    }
-
-    .week {
-        background:#444;
-        color:#fff;
-    }
-
-    .card {
-        background: white;
-        border-radius: 10px;
-        padding: 15px;
-        margin-bottom: 15px;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-    }
-
-    .time {
-        font-weight: bold;
-        margin-bottom: 10px;
-        display:flex;
-        justify-content:space-between;
-    }
-
-    .status-row {
-        display: flex;
-        gap: 10px;
-        margin-bottom: 10px;
-    }
-
-    .status-box {
-        flex: 1;
-        padding: 10px;
-        border-radius: 8px;
-        border: 1px solid #ddd;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        opacity: 0.6;
-        transition: 0.2s;
-    }
-
-    .status-box.active {
-        opacity: 1;
-        border: 2px solid #000;
-        background: #f0f0f0;
-    }
-
-    .tasks {
-        white-space: pre-line;
-        margin-top: 10px;
-        font-size: 14px;
-        line-height: 1.6;
-    }
-
-    .emoji-history {
-        margin-top: 10px;
-        font-size: 16px;
-        min-height: 20px;
-    }
-
-    .pop {
-        display:inline-block;
-        animation: pop 0.3s ease;
-    }
-
-    @keyframes pop {
-        0% { transform: scale(0.4); opacity: 0; }
-        100% { transform: scale(1); opacity: 1; }
-    }
+body { font-family: Arial; margin:0; background:#f4f4f4; }
+.container { max-width:900px; margin:auto; padding:20px; }
+.score { background:#fff; padding:10px; border-radius:8px; margin-bottom:10px; }
+.top-bar { display:flex; gap:10px; margin-bottom:10px; }
+.btn { padding:8px 12px; border:1px solid #ddd; border-radius:6px; background:#f7f7f7; cursor:pointer; }
+.card { background:#fff; padding:15px; border-radius:10px; margin-bottom:15px; }
+.time { display:flex; justify-content:space-between; margin-bottom:10px; gap:10px; }
+.emoji-inline { display:flex; gap:4px; }
+.status-row { display:flex; gap:10px; margin-bottom:10px; }
+.status-box { flex:1; padding:10px; border:1px solid #ddd; border-radius:8px; display:flex; justify-content:space-between; }
+.notes { margin-top:10px; }
+.note-item { display:flex; justify-content:space-between; background:#fafafa; padding:6px; margin-bottom:5px; border-radius:6px; }
+.note-input { display:flex; gap:5px; margin-top:8px; }
+.time-edit-input { border:1px solid #ddd; padding:4px; border-radius:6px; }
+.time-actions { display:flex; gap:5px; }
 </style>
 </head>
 
 <body>
 
 <div class="container">
+<div id="score" class="score"></div>
 
-    <div id="score" class="score"></div>
+<div class="top-bar">
+<button class="btn" onclick="resetWeekEmojis()">Effacer emoji</button>
+<button class="btn" onclick="resetAll()">Réinitialiser tout</button>
+</div>
 
-    <div class="top-bar">
-        <button class="btn week" onclick="resetWeekEmojis()">Semaine</button>
-        <button class="btn reset" onclick="resetAll()">Réinitialiser tout</button>
-    </div>
-
-    <div id="blocks"></div>
+<div id="blocks"></div>
 </div>
 
 <script>
-const TASKS = `apprendre, lire, copier, écrire, parler, voir, comprendre, pratiquer, se préparer, faire des rappels, propreté, entreprendre, ...
-lire le coran, écouter le coran, apprendre le coran.
-faire correctement les choses.`;
 
-const BLOCKS = [
-    "05:00–09:00",
-    "09:00–13:00",
-    "13:00–15:40",
-    "15:40–18:20",
-    "18:20–19:50",
-    "19:50–23:00",
-    "23:00–05:00"
+let TIME_EDITING = false;
+
+const DEFAULT_NOTES = [
+"apprendre, lire, copier...",
+"lire le coran...",
+"faire correctement les choses"
 ];
 
-const STATE_KEY = "routine_state";
-const EMOJI_KEY = "routine_emojis";
-const SCORE_KEY = "routine_score";
+const BLOCKS = [
+"05:00–09:00","09:00–13:00","13:00–15:40",
+"15:40–18:20","18:20–19:50","19:50–23:00","23:00–05:00"
+];
 
-/* ---------------- STORAGE ---------------- */
+const STATE_KEY="routine_state";
+const EMOJI_KEY="routine_emojis";
+const SCORE_KEY="routine_score";
+const NOTES_KEY="routine_notes";
 
-function load(key, fallback) {
-    return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback));
+function load(k,f){return JSON.parse(localStorage.getItem(k)||JSON.stringify(f));}
+function save(k,v){localStorage.setItem(k,JSON.stringify(v));}
+
+function getScore(){return load(SCORE_KEY,{fort:0,faible:0});}
+function updateScore(t){const s=getScore();s[t]++;save(SCORE_KEY,s);}
+
+function addEmoji(b,e){
+const em=load(EMOJI_KEY,{});
+if(!em[b]) em[b]=[];
+em[b].push(e);
+save(EMOJI_KEY,em);
 }
 
-function save(key, value) {
-    localStorage.setItem(key, JSON.stringify(value));
+function getNotes(block){
+const notes=load(NOTES_KEY,{});
+if(!notes[block]){
+notes[block]= block==="23:00–05:00"
+? ["Dormir correctement."]
+: [...DEFAULT_NOTES];
+save(NOTES_KEY,notes);
+}
+return notes[block];
 }
 
-/* ---------------- SCORE ---------------- */
-
-function getScore() {
-    return load(SCORE_KEY, { fort: 0, faible: 0 });
+function addNote(b,t){
+const n=load(NOTES_KEY,{});
+if(!n[b]) n[b]=[...DEFAULT_NOTES];
+n[b].push(t);
+save(NOTES_KEY,n);
 }
 
-function updateScore(type) {
-    const s = getScore();
-    s[type] += 1;
-    save(SCORE_KEY, s);
+function deleteNote(b,i){
+const n=load(NOTES_KEY,{});
+if(!n[b]) return;
+n[b].splice(i,1);
+save(NOTES_KEY,n);
+
+if(!TIME_EDITING) render();
 }
 
-/* ---------------- EMOJIS (CONSERVÉ) ---------------- */
+function setStatus(b,v){
+const s=load(STATE_KEY,{});
+s[b]=v;
+updateScore(v==="Fort"?"fort":"faible");
+addEmoji(b,v==="Fort"?"✅":"❌");
+save(STATE_KEY,s);
 
-function addEmoji(block, emoji) {
-    const emojis = load(EMOJI_KEY, {});
-    if (!emojis[block]) emojis[block] = [];
-    emojis[block].push(emoji);
-    save(EMOJI_KEY, emojis);
+if(!TIME_EDITING) render();
 }
 
-/* ---------------- STATE ---------------- */
+function resetWeekEmojis(){localStorage.removeItem(EMOJI_KEY);render();}
+function resetAll(){localStorage.clear();render();}
 
-function setStatus(block, value) {
-    const state = load(STATE_KEY, {});
-    const prev = state[block];
+/* ===== HORAIRES PATCH ===== */
 
-    state[block] = value;
-
-    if (value === "Fort") {
-        updateScore("fort");
-        addEmoji(block, "✅");
-    } else {
-        updateScore("faible");
-        addEmoji(block, "❌");
-    }
-
-    save(STATE_KEY, state);
-    render();
+function getActiveBlocks(){
+return load("routine_blocks_custom",null)||BLOCKS;
 }
 
-/* ---------------- WEEK RESET EMOJIS ---------------- */
+function saveBlocks(b){save("routine_blocks_custom",b);}
 
-function resetWeekEmojis() {
-    if (!confirm("Effacer les emojis de la semaine ?")) return;
-    localStorage.removeItem(EMOJI_KEY);
-    render();
+function enableTimeEdit(span,index){
+TIME_EDITING=true;
+
+const old=span.innerText;
+const parent=span.parentNode;
+
+const input=document.createElement("input");
+input.value=old;
+input.className="time-edit-input";
+
+const actions=document.createElement("div");
+actions.className="time-actions";
+
+const ok=document.createElement("button");
+ok.innerText="Valider";
+
+const cancel=document.createElement("button");
+cancel.innerText="Annuler";
+
+ok.onclick=()=>{
+const blocks=getActiveBlocks();
+blocks[index]=input.value;
+saveBlocks(blocks);
+
+TIME_EDITING=false;
+render();
+};
+
+cancel.onclick=()=>{
+input.remove();
+actions.remove();
+span.style.display="";
+TIME_EDITING=false;
+};
+
+actions.appendChild(ok);
+actions.appendChild(cancel);
+
+span.style.display="none";
+parent.insertBefore(input, span.nextSibling);
+parent.insertBefore(actions, input.nextSibling);
 }
 
-/* ---------------- RESET ALL ---------------- */
+/* Listener corrigé */
+document.addEventListener("dblclick", (e) => {
+const target = e.target;
 
-function resetAll() {
-    if (!confirm("Réinitialiser tout ?")) return;
+if (!target.matches('[data-editable="time"]')) return;
+if (target.closest(".notes") || target.closest(".note-input")) return;
 
-    localStorage.removeItem(STATE_KEY);
-    localStorage.removeItem(EMOJI_KEY);
-    localStorage.removeItem(SCORE_KEY);
+enableTimeEdit(target, parseInt(target.dataset.index));
+});
 
-    render();
+/* ===== RENDER ===== */
+
+function render(){
+const container=document.getElementById("blocks");
+const score=getScore();
+const emojis=load(EMOJI_KEY,{});
+const blocks=getActiveBlocks();
+
+container.innerHTML="";
+
+blocks.forEach((block,i)=>{
+const notes=getNotes(block);
+const history=emojis[block]||[];
+
+const card=document.createElement("div");
+card.className="card";
+
+card.innerHTML=`
+<div class="time">
+<span data-editable="time" data-index="${i}">${block}</span>
+<span class="emoji-inline">
+${history.map(e=>`<span>${e}</span>`).join("")}
+</span>
+</div>
+
+<div class="status-row">
+<div class="status-box">
+<span>Fort</span>
+<input type="checkbox" onchange="setStatus('${block}','Fort')">
+</div>
+<div class="status-box">
+<span>Faible</span>
+<input type="checkbox" onchange="setStatus('${block}','Faible')">
+</div>
+</div>
+
+<div class="notes">
+${notes.map((n,i)=>`
+<div class="note-item">
+<span>${n}</span>
+<button onclick="deleteNote('${block}',${i})">note${i+1}</button>
+</div>`).join("")}
+
+<div class="note-input">
+<input id="input-${block}">
+<button onclick="addNoteUI('${block}')">Ajouter</button>
+</div>
+</div>
+`;
+
+container.appendChild(card);
+});
+
+document.getElementById("score").innerHTML=`
+<div>✅ Fort</div>
+<div>❌ Faible</div>
+<div>🏆 Score : ✅ ${score.fort} - ❌ ${score.faible}</div>
+`;
 }
 
-/* ---------------- RENDER ---------------- */
+function addNoteUI(b){
+const input=document.getElementById("input-"+b);
+const v=input.value.trim();
+if(!v) return;
 
-function render() {
-    const container = document.getElementById("blocks");
-    const scoreEl = document.getElementById("score");
+addNote(b,v);
+input.value="";
 
-    const state = load(STATE_KEY, {});
-    const emojis = load(EMOJI_KEY, {});
-    const score = getScore();
-
-    container.innerHTML = "";
-
-    BLOCKS.forEach(block => {
-        const status = state[block] || "Fort";
-        const history = emojis[block] || [];
-
-        const card = document.createElement("div");
-        card.className = "card";
-
-        const isSleep = block === "23:00–05:00";
-
-        card.innerHTML = `
-            <div class="time">
-                <span>${block}</span>
-            </div>
-
-            <div class="status-row">
-
-                <div class="status-box ${status === "Fort" ? "active" : ""}">
-                    <span class="fort">Statut : Fort</span>
-                    <input type="checkbox"
-                        ${status === "Fort" ? "checked" : ""}
-                        onchange="setStatus('${block}', 'Fort')">
-                </div>
-
-                <div class="status-box ${status === "Faible" ? "active" : ""}">
-                    <span class="faible">Statut : Faible</span>
-                    <input type="checkbox"
-                        ${status === "Faible" ? "checked" : ""}
-                        onchange="setStatus('${block}', 'Faible')">
-                </div>
-
-            </div>
-
-            <div class="tasks">${isSleep ? "Dormir correctement." : TASKS}</div>
-
-            <div class="emoji-history">
-                ${history.map(e => `<span class="pop">${e}</span>`).join(" ")}
-            </div>
-        `;
-
-        container.appendChild(card);
-    });
-
-    scoreEl.innerHTML = `
-        <div>✅ Fort</div>
-        <div>❌ Faible</div>
-        <div>🏆 Score : ${score.fort} ✅ - ${score.faible} ❌</div>
-    `;
+if(!TIME_EDITING) render();
 }
 
 render();
-</script>
 
+</script>
 </body>
 </html>
